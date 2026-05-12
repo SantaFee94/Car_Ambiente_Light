@@ -467,7 +467,6 @@
         }
         .sec-lbl::after { content: ''; flex: 1; height: 1px; background: linear-gradient(to right, var(--border), transparent); }
 
-        /* Bluetooth unavailable state */
         .ble-btn.unavailable {
             opacity: 0.5;
             cursor: not-allowed;
@@ -535,7 +534,7 @@
                 <div class="tab" id="tab3" onclick="selTab(3)">SYSTEM</div>
             </div>
 
-            <!-- PANELS unverändert -->
+            <!-- PANELS -->
             <div class="panel active" id="panel0">
                 <div class="card">
                     <div class="card-header"><span class="card-title">Lichtfarbe</span><span class="card-tag" id="modeTag">COMFORT</span></div>
@@ -614,7 +613,7 @@
         });
 
         // ═══════════════════════════════════
-        //  AURORA BACKGROUND CANVAS (unverändert)
+        //  AURORA BACKGROUND CANVAS
         // ═══════════════════════════════════
         (function() {
             const c = document.getElementById('auroraCanvas');
@@ -637,7 +636,7 @@
         })();
 
         // ═══════════════════════════════════
-        //  MOUSE-INTERACTIVE PARTICLES (unverändert)
+        //  MOUSE-INTERACTIVE PARTICLES
         // ═══════════════════════════════════
         (function() {
             const c = document.getElementById('particleCanvas');
@@ -694,7 +693,7 @@
         }
 
         // ═══════════════════════════════════
-        //  APP STATE & BLE (mit Prüfung)
+        //  APP STATE & BLE (KORRIGIERT)
         // ═══════════════════════════════════
         const modeNames  = ['COMFORT','SPORT','NIGHT'];
         const stripNames = ['Band 1','Band 2','Band 3','Band 4'];
@@ -711,7 +710,6 @@
         };
         let bleChar=null, bleConn=false, bleSupported = false;
 
-        // Prüfung auf Bluetooth-API
         function checkBLESupport() {
             if (navigator.bluetooth) {
                 bleSupported = true;
@@ -727,59 +725,55 @@
                 return false;
             }
         }
+        window.addEventListener('DOMContentLoaded', () => { checkBLESupport(); });
 
-        // Initiale Prüfung direkt nach dem DOM-Aufbau
-        window.addEventListener('DOMContentLoaded', () => {
-            checkBLESupport();
-        });
+        async function connectBLE() {
+            if (!bleSupported) {
+                toast('// BLE NICHT VERFÜGBAR');
+                return;
+            }
+            if (bleConn) {
+                toast('// BEREITS VERBUNDEN');
+                return;
+            }
+            try {
+                // ── Option 1: Filter mit Namen (wie bisher) ──
+                // const dev = await navigator.bluetooth.requestDevice({
+                //     filters: [{ name: 'LumaControl' }],
+                //     optionalServices: ['12345678-1234-1234-1234-123456789abc']
+                // });
 
-async function connectBLE() {
- if (!bleSupported) {
-    toast('// BLE NICHT VERFÜGBAR');
-    return;
-  }
-  if (bleConn) {
-    toast('// BEREITS VERBUNDEN');
-    return;
-  }
-  try {
-    const dev = await navigator.bluetooth.requestDevice({
-      // Akzeptiere alle Geräte, wenn der Filter versagt – einfacher zum Testen
-      // Entweder Filter weglassen oder acceptAllDevices:true setzen.
-      // Wir lassen den Filter aber drin – passe den Namen ggf. an.
-      filters: [{ name: 'LumaControl' }],
-      optionalServices: ['12345678-1234-1234-1234-123456789abc']
-    });
-    const srv = await dev.gatt.connect();
-    const svc = await srv.getPrimaryService('12345678-1234-1234-1234-123456789abc');
-    bleChar = await svc.getCharacteristic('12345678-1234-1234-1234-123456789ab1');
-    const stCh = await svc.getCharacteristic('12345678-1234-1234-1234-123456789ab2');
-    await stCh.startNotifications();
-    stCh.addEventListener('characteristicvaluechanged', e => {
-      try { applyState(JSON.parse(new TextDecoder().decode(e.target.value))); } catch(x) {}
-    });
-    await sendCmd({ cmd: 'sync' });
-    setConn(true);
-    toast('// LINK ESTABLISHED');
-    dev.addEventListener('gattserverdisconnected', () => {
-      bleChar = null;
-      setConn(false);
-      toast('// LINK LOST');
-    });
-  } catch (e) {
-    // Nutzer hat abgebrochen – kein Fehler, einfach nichts zeigen
-    if (e.name === 'AbortError') return;
-    // NotFoundError: Kein passendes Gerät in Reichweite
-    if (e.name === 'NotFoundError') {
-      toast('// KEIN GERÄT GEFUNDEN');
-      return;
-    }
-    // Andere Fehler mit sicherer Nachricht
-    const msg = e.message || e.toString();
-    toast('// ERR: ' + msg);
-    console.error('BLE error:', e);
-  }
-}
+                // ── Option 2 (zum Testen): Alle Geräte anzeigen ──
+                const dev = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['12345678-1234-1234-1234-123456789abc']
+                });
+
+                const srv = await dev.gatt.connect();
+                const svc = await srv.getPrimaryService('12345678-1234-1234-1234-123456789abc');
+                bleChar = await svc.getCharacteristic('12345678-1234-1234-1234-123456789ab1');
+                const stCh = await svc.getCharacteristic('12345678-1234-1234-1234-123456789ab2');
+                await stCh.startNotifications();
+                stCh.addEventListener('characteristicvaluechanged', e => {
+                    try { applyState(JSON.parse(new TextDecoder().decode(e.target.value))); } catch(x) {}
+                });
+                await sendCmd({cmd:'sync'});
+                setConn(true);
+                toast('// LINK ESTABLISHED');
+                dev.addEventListener('gattserverdisconnected', () => {
+                    bleChar=null; setConn(false); toast('// LINK LOST');
+                });
+            } catch(e) {
+                if (e.name === 'AbortError') return; // Nutzer hat abgebrochen
+                if (e.name === 'NotFoundError') {
+                    toast('// KEIN GERÄT GEFUNDEN');
+                    return;
+                }
+                const msg = e.message || e.toString();
+                toast('// ERR: ' + msg);
+                console.error('BLE error:', e);
+            }
+        }
 
         function setConn(v) {
             bleConn = v;
@@ -791,7 +785,7 @@ async function connectBLE() {
         }
         async function sendCmd(obj) {
             if (!bleChar) return;
-            try { await bleChar.writeValue(new TextEncoder().encode(JSON.stringify(obj))); } catch(e){}
+            try { await bleChar.writeValue(new TextEncoder().encode(JSON.stringify(obj))); } catch(e) {}
         }
         function applyState(d) {
             if (d.p) S.p = d.p;
